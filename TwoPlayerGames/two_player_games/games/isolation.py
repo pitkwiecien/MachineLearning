@@ -56,6 +56,14 @@ class IsolationState(State):
 
         self.finished, self.winner = self.check_finished()
 
+    @property
+    def current_player(self) -> Player:
+        return self._current_player
+
+    @property
+    def other_player(self) -> Player:
+        return self._other_player
+
     def check_finished(self) -> Tuple[bool, Optional[Player]]:
         """
         Checks if the current player has any valid adjacent moves.
@@ -112,6 +120,22 @@ class IsolationState(State):
 
         return moves
 
+    def get_moves_for_player(self, player: Player) -> Iterable[IsolationMove]:
+        if self.finished:
+            return []
+        pos = self.current_positions[player]
+        row, col = pos // self.size, pos % self.size
+        moves = []
+        for dr in [-1,0,1]:
+            for dc in [-1,0,1]:
+                if dr==0 and dc==0: continue
+                r, c = row+dr, col+dc
+                if 0 <= r < self.size and 0 <= c < self.size:
+                    idx = r*self.size + c
+                    if self.grid[idx] is None:
+                        moves.append(IsolationMove(idx))
+        return moves
+
     def make_move(self, move: IsolationMove) -> 'IsolationState':
         if self.finished:
             raise ValueError("Cannot make move on a finished game.")
@@ -152,14 +176,16 @@ class IsolationState(State):
                 idx = r * self.size + c
                 field = self.grid[idx]
 
-                # Highlight the current heads of the trails with brackets
                 if self.current_positions[self._current_player] == idx:
                     row_str.append(f"[{field.char}]")
                 elif self.current_positions[self._other_player] == idx:
                     row_str.append(f"[{field.char}]")
                 else:
-                    char = field.char if field is not None else ' '
-                    row_str.append(f" {char} ")
+                    if field is not None:
+                        row_str.append(f" {field.char} ")
+                    else:
+                        row_str.append(f"{r*self.size + c:^3}")
+
             lines.append("|".join(row_str))
 
         divider = "\n" + ("-" * (self.size * 4 - 1)) + "\n"
