@@ -1,4 +1,5 @@
 from typing import Dict, Iterable, List, Optional, Tuple
+from colorama import Fore, Style
 
 from two_player_games.game import Game
 from two_player_games.move import Move
@@ -175,14 +176,16 @@ class IsolationState(State):
             for c in range(self.size):
                 idx = r * self.size + c
                 field = self.grid[idx]
-
+                colour = ""
+                if field is not None:
+                    colour = Fore.GREEN if field.char == "O" else Fore.RED
                 if self.current_positions[self._current_player] == idx:
-                    row_str.append(f"[{field.char}]")
+                    row_str.append(f"{colour}[{field.char}]{Style.RESET_ALL}")
                 elif self.current_positions[self._other_player] == idx:
-                    row_str.append(f"[{field.char}]")
+                    row_str.append(f"{colour}[{field.char}]{Style.RESET_ALL}")
                 else:
                     if field is not None:
-                        row_str.append(f" {field.char} ")
+                        row_str.append(f"{colour} {field.char} {Style.RESET_ALL}")
                     else:
                         row_str.append(f"{r*self.size + c:^3}")
 
