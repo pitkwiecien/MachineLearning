@@ -4,3 +4,5 @@ pandas
 scikit-learn
 tqdm
 matplotlib
+ipywidgets
+seaborn
