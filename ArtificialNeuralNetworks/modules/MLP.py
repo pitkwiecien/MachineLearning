@@ -6,9 +6,10 @@ from ActivationFunction import ActivationFunction
 
 
 class MLP:
-    def __init__(self, layer_sizes: list[int], activations: list[ActivationFunction]):
+    def __init__(self, layer_sizes: list[int], activations: list[ActivationFunction], round_output: bool = False):
         if len(layer_sizes) - 1 != len(activations):
             raise ValueError("activations must match the number of layers")
+        self.round_output = round_output
 
         self.layers: list[Layer] = []
         for i in range(len(layer_sizes) - 1):
@@ -34,8 +35,27 @@ class MLP:
             assert gradient is not None
             gradient = layer.backward(gradient, learning_rate)
 
-    def predict(self, input_data: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-        return self.forward(input_data)
+    def predict(self, input_data: npt.NDArray[np.float64], round_output: bool | None = None) -> npt.NDArray[np.float64]:
+        """Run forward pass and optionally round outputs.
+
+        Args:
+            input_data: input array
+            round_output: override instance flag; if None, use `self.round_output`.
+
+        Returns:
+            Network outputs as an `np.ndarray` (float64). If rounded, values
+            are rounded to nearest integer and clamped to [0, 5].
+        """
+        output = self.forward(input_data)
+        do_round = self.round_output if round_output is None else round_output
+
+        if do_round:
+            rounded = np.round(output)
+            # clamp to expected quality range [0, 5]
+            rounded = np.clip(rounded, 0, 5)
+            return rounded.astype(np.float64)
+
+        return output
 
     def train_step(
         self,
