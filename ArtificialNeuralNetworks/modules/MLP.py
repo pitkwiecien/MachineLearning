@@ -1,8 +1,8 @@
 from typing import Callable
 import numpy as np
 import numpy.typing as npt
-from Layer import Layer
-from ActivationFunction import ActivationFunction
+from .Layer import Layer
+from .ActivationFunction import ActivationFunction
 
 
 class MLP:

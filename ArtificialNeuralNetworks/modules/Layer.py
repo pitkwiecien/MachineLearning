@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.typing as npt
 from typing import Optional
-from ActivationFunction import ActivationFunction
+from .ActivationFunction import ActivationFunction
 
 
 class Layer:
