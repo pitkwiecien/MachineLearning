@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -9,6 +9,7 @@ from .MLP import MLP
 from .cross_entropy import grad_softmax_cross_entropy_logits, softmax_cross_entropy_with_logits
 from .csv_read import load_train_validation_test_split
 from .mse import mse, mse_derivative
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
 
 
 FloatArray = npt.NDArray[np.float64]
@@ -133,10 +134,13 @@ def evaluate_model(
     return float(np.mean(batch_losses)), accuracy
 
 
-def train_validate_test(
+def train_model(
     path: str,
     config: TrainingConfig,
-) -> tuple[MLP, dict[str, list[float]], dict[str, float], np.ndarray]:
+) -> tuple[MLP, dict[str, list[float]], np.ndarray]:
+    """Train a model using train/validation splits and return the trained model,
+    training history, class labels, and test scores.
+    """
     X_train, X_val, X_test, y_train, y_val, y_test = load_train_validation_test_split(
         path=path,
         val_size=config.val_size,
@@ -149,11 +153,15 @@ def train_validate_test(
     model = build_model(X_train.shape[1], len(classes), config)
     loss_function, loss_derivative = _loss_pair(config.loss_name)
 
-    history: dict[str, list[float]] = {
+    history: dict[str, list[float] | Any] = {
         "train_loss": [],
         "train_accuracy": [],
         "val_loss": [],
         "val_accuracy": [],
+        "val_f1": None,
+        "val_precision": None,
+        "val_recall": None,
+        "val_confusion_matrix": None,
     }
 
     rng = np.random.default_rng(config.random_state)
@@ -165,17 +173,85 @@ def train_validate_test(
 
         train_loss, train_accuracy = evaluate_model(model, X_train, y_train_encoded, config.loss_name, config.batch_size)
         val_loss, val_accuracy = evaluate_model(model, X_val, y_val_encoded, config.loss_name, config.batch_size)
+        test_scores = test_model(model, X_test=X_test, y_test=y_test, config=config)
 
         history["train_loss"].append(float(np.mean(batch_losses)))
         history["train_accuracy"].append(train_accuracy)
         history["val_loss"].append(val_loss)
         history["val_accuracy"].append(val_accuracy)
+        history["val_f1"] = test_scores["test_f1"]
+        history["val_precision"] = test_scores["test_precision"]
+        history["val_recall"] = test_scores["test_recall"]
+        history["val_confusion_matrix"] = test_scores["test_confusion_matrix"]
 
-    test_loss, test_accuracy = evaluate_model(model, X_test, y_test_encoded, config.loss_name, config.batch_size)
-    metrics = {
+    # Evaluate on test set
+
+
+    return model, history, classes
+
+
+def test_model(
+    model: MLP,
+    path: str | None = None,
+    config: TrainingConfig | None = None,
+    X_test: FloatArray | None = None,
+    y_test: FloatArray | None = None,
+) -> dict[str, Any]:
+    """Evaluate a trained `model` on a test set.
+
+    Provide either `path` and `config` (to load the dataset splits) or pass
+    `X_test` and `y_test` arrays directly. Returns a metrics dict.
+    """
+    if path is not None and config is not None:
+        _, _, X_test_loaded, _, _, y_test_loaded = load_train_validation_test_split(
+            path=path,
+            val_size=config.val_size,
+            test_size=config.test_size,
+            random_state=config.random_state,
+            shuffle=config.shuffle,
+        )
+        X_test = X_test_loaded
+        y_test = y_test_loaded
+
+    if X_test is None or y_test is None:
+        raise ValueError("Provide either (path and config) or (X_test and y_test)")
+
+    # Prepare integer labels
+    y_test_int = np.asarray(y_test, dtype=int)
+
+    # Run model on test set in batches and collect logits/predictions
+    batch_size = config.batch_size if config is not None else 32
+    effective_batch_size = int(X_test.shape[0]) if batch_size is None else int(batch_size)
+    preds_list: list[np.ndarray] = []
+    losses: list[float] = []
+    loss_function, _ = _loss_pair(config.loss_name if config is not None else "cross_entropy")
+
+    for start in range(0, X_test.shape[0], effective_batch_size):
+        sl = slice(start, start + effective_batch_size)
+        X_batch = X_test[sl].T
+        y_batch_int = y_test_int[sl]
+        # one-hot for loss computation
+        num_classes = model.layers[-1].output_size
+        y_batch_onehot = np.eye(num_classes, dtype=np.float64)[y_batch_int].T
+        y_pred = model.forward(X_batch)
+        preds_list.append(y_pred)
+        losses.append(loss_function(y_pred, y_batch_onehot))
+
+    predicted_matrix = np.concatenate(preds_list, axis=1)
+    predicted_labels = np.argmax(predicted_matrix, axis=0)
+
+    test_loss = float(np.mean(losses))
+    test_accuracy = float(accuracy_score(y_test_int, predicted_labels))
+    test_f1 = float(f1_score(y_test_int, predicted_labels, average="macro", zero_division=0))
+    test_precision = float(precision_score(y_test_int, predicted_labels, average="macro", zero_division=0))
+    test_recall = float(recall_score(y_test_int, predicted_labels, average="macro", zero_division=0))
+    test_confusion = confusion_matrix(y_test_int, predicted_labels)
+
+    return {
         "test_loss": test_loss,
         "test_accuracy": test_accuracy,
-        "classes": classes,
+        "test_f1": test_f1,
+        "test_precision": test_precision,
+        "test_recall": test_recall,
+        "test_confusion_matrix": test_confusion,
     }
-
-    return model, history, metrics, classes
