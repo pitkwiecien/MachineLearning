@@ -11,6 +11,10 @@ class ActivationFunction(Enum):
     SOFTMAX = "SOFTMAX"
 
     @staticmethod
+    def from_name(name: str) -> "ActivationFunction":
+        return ActivationFunction[name.strip().upper()]
+
+    @staticmethod
     def relu(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return np.maximum(0, z)
 
