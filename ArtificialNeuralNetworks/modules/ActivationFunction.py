@@ -54,7 +54,7 @@ class ActivationFunction(Enum):
 
     @staticmethod
     def softmax_derivative(z):
-        raise NotImplementedError
+        return np.ones_like(z)
 
     def get_function(self):
         return {
