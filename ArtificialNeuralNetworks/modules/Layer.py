@@ -1,47 +1,36 @@
 import numpy as np
-import numpy.typing as npt
 from typing import Optional
 from .ActivationFunction import ActivationFunction
 
 
 class Layer:
-    def __init__(
-        self,
-        input_size: int,
-        output_size: int,
-        activation: ActivationFunction
-    ):
-        self.input_size = input_size
-        self.output_size = output_size
-        self.weights: npt.NDArray[np.float64] = (
-            np.random.randn(output_size, input_size) * np.sqrt(2 / input_size)
-        )
-        self.biases: npt.NDArray[np.float64] = np.zeros((output_size, 1))
-        self.input_data: Optional[npt.NDArray[np.float64]] = None
-        self.linear_output: Optional[npt.NDArray[np.float64]] = None
-        self.activation_output: Optional[npt.NDArray[np.float64]] = None
+    def __init__(self, input_size: int, output_size: int, activation: ActivationFunction):
+
+        self.weights = np.random.randn(input_size, output_size) * np.sqrt(2 / input_size)
+        self.biases = np.zeros((1, output_size))
+
+        self.input_data: Optional[np.ndarray] = None
+        self.linear_output: Optional[np.ndarray] = None
+
         self.activation = activation
-        self.activation_function = activation.get_function()
-        self.activation_derivative = activation.get_derivative()
+        self.act = activation.get_function()
+        self.dact = activation.get_derivative()
 
-    def forward(self, input_data: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-        self.input_data = input_data
-        self.linear_output = self.weights @ input_data + self.biases
-        self.activation_output = self.activation_function(self.linear_output)
-        return self.activation_output
+    def forward(self, x):
+        self.input_data = x
+        self.linear_output = x @ self.weights + self.biases
+        return self.act(self.linear_output)
 
-    def backward(self, gradient_from_next_layer: npt.NDArray[np.float64], learning_rate: float) -> npt.NDArray[np.float64]:
-        assert self.linear_output is not None
-        delta_pre_activation = gradient_from_next_layer * self.activation_derivative(self.linear_output)
+    def backward(self, grad_out, lr):
 
-        assert self.input_data is not None
-        batch_size = self.input_data.shape[1]
+        grad_act = grad_out * self.dact(self.linear_output)
+        batch_size = self.input_data.shape[0]
 
-        gradient_weights = (delta_pre_activation @ self.input_data.T) / batch_size
-        gradient_biases = np.sum(delta_pre_activation, axis=1, keepdims=True) / batch_size
-        gradient_input = self.weights.T @ delta_pre_activation
+        grad_w = (self.input_data.T @ grad_act) / batch_size
+        grad_b = np.sum(grad_act, axis=0, keepdims=True) / batch_size
+        grad_input = grad_act @ self.weights.T
 
-        self.weights -= learning_rate * gradient_weights
-        self.biases -= learning_rate * gradient_biases
+        self.weights -= lr * grad_w
+        self.biases -= lr * grad_b
 
-        return gradient_input
+        return grad_input

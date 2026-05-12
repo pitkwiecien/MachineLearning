@@ -1,7 +1,6 @@
-from typing import Callable
 from enum import Enum
-import numpy.typing as npt
 import numpy as np
+
 
 class ActivationFunction(Enum):
     RELU = "RELU"
@@ -11,66 +10,66 @@ class ActivationFunction(Enum):
     SOFTMAX = "SOFTMAX"
 
     @staticmethod
-    def from_name(name: str) -> "ActivationFunction":
+    def from_name(name: str):
         return ActivationFunction[name.strip().upper()]
 
     @staticmethod
-    def relu(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def relu(z):
         return np.maximum(0, z)
 
     @staticmethod
-    def relu_derivative(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def relu_derivative(z):
         return (z > 0).astype(np.float64)
 
     @staticmethod
-    def sigmoid(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def sigmoid(z):
         return 1 / (1 + np.exp(-z))
 
     @staticmethod
-    def sigmoid_derivative(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def sigmoid_derivative(z):
         s = ActivationFunction.sigmoid(z)
         return s * (1 - s)
 
     @staticmethod
-    def tanh(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def tanh(z):
         return np.tanh(z)
 
     @staticmethod
-    def tanh_derivative(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def tanh_derivative(z):
         return 1 - np.tanh(z) ** 2
 
     @staticmethod
-    def linear(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def linear(z):
         return z
 
     @staticmethod
-    def linear_derivative(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def linear_derivative(z):
         return np.ones_like(z)
 
     @staticmethod
-    def softmax(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-        shifted = z - np.max(z, axis=0, keepdims=True)
-        exp = np.exp(shifted)
-        return exp / np.sum(exp, axis=0, keepdims=True)
+    def softmax(z):
+        z = z - np.max(z, axis=1, keepdims=True)
+        exp = np.exp(z)
+        return exp / np.sum(exp, axis=1, keepdims=True)
 
     @staticmethod
-    def softmax_derivative(z: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-        raise NotImplementedError("Softmax derivative is not used seperately")
+    def softmax_derivative(z):
+        raise NotImplementedError
 
-    def get_function(self) -> Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]]:
+    def get_function(self):
         return {
-            ActivationFunction.RELU: ActivationFunction.relu,
-            ActivationFunction.SIGMOID: ActivationFunction.sigmoid,
-            ActivationFunction.TANH: ActivationFunction.tanh,
-            ActivationFunction.LINEAR: ActivationFunction.linear,
-            ActivationFunction.SOFTMAX: ActivationFunction.softmax,
+            ActivationFunction.RELU: self.relu,
+            ActivationFunction.SIGMOID: self.sigmoid,
+            ActivationFunction.TANH: self.tanh,
+            ActivationFunction.LINEAR: self.linear,
+            ActivationFunction.SOFTMAX: self.softmax,
         }[self]
 
-    def get_derivative(self) -> Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]]:
+    def get_derivative(self):
         return {
-            ActivationFunction.RELU: ActivationFunction.relu_derivative,
-            ActivationFunction.SIGMOID: ActivationFunction.sigmoid_derivative,
-            ActivationFunction.TANH: ActivationFunction.tanh_derivative,
-            ActivationFunction.LINEAR: ActivationFunction.linear_derivative,
-            ActivationFunction.SOFTMAX: ActivationFunction.softmax_derivative,
+            ActivationFunction.RELU: self.relu_derivative,
+            ActivationFunction.SIGMOID: self.sigmoid_derivative,
+            ActivationFunction.TANH: self.tanh_derivative,
+            ActivationFunction.LINEAR: self.linear_derivative,
+            ActivationFunction.SOFTMAX: self.softmax_derivative,
         }[self]
