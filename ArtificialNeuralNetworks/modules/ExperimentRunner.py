@@ -96,9 +96,14 @@ class ExperimentRunner:
 
         return configs
 
-    def run(self, data_path, top_k=10):
+    def run(self, data_path, top_k=10, sample_size=None):
 
         configs = self._configs()
+
+        # Obsługa sample_size
+        if sample_size is not None:
+            random.seed(42)
+            configs = random.sample(configs, min(sample_size, len(configs)))
 
         print(f"Experiments: {len(configs)}")
 
@@ -118,6 +123,7 @@ class ExperimentRunner:
                     "f1": metrics.f1,
                     "precision": metrics.precision,
                     "recall": metrics.recall,
+                    "train_loss": history["train_loss"][-1], # Dodana kolumna
                     "val_loss": history["val_loss"][-1],
                 })
 
@@ -135,7 +141,7 @@ class ExperimentRunner:
             ascending=[False, False, True]
         ).reset_index(drop=True)
 
-        cols = ["accuracy", "f1", "precision", "recall", "val_loss", "lr"]
+        cols = ["accuracy", "f1", "precision", "recall", "train_loss", "val_loss", "lr"]
         df[cols] = df[cols].round(4)
 
         print("\nTOP MODELS:\n")
