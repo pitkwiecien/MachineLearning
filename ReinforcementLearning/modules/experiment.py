@@ -128,7 +128,7 @@ def grid_search(
     best_qtable = None
     best_config = None
     best_result = None
-    best_eval_stats = None  # ← zachowaj eval_stats najlepszej kombinacji
+    best_eval_stats = None
 
     for combo in tqdm(combinations, desc="Grid search"):
         params = dict(zip(keys, combo))
@@ -166,7 +166,7 @@ def grid_search(
             best_qtable = agent.q_table.copy()
             best_config = config
             best_result = result
-            best_eval_stats = eval_stats  # ← zachowaj
+            best_eval_stats = eval_stats
 
     df = pd.DataFrame(records).sort_values("eval_mean", ascending=False).reset_index(drop=True)
 
@@ -186,8 +186,8 @@ def grid_search(
 
     best_exp._best_agent = best_agent
     best_exp.benchmark = best_exp.evaluator.stability_analysis([best_result])
-    best_exp.eval_stats = best_eval_stats  # ← użyj zachowanych, nie losuj ponownie
-    _, best_exp.random_stats = best_exp._evaluate(eval_episodes)  # random potrzebuje środowiska
+    best_exp.eval_stats = best_eval_stats
+    _, best_exp.random_stats = best_exp._evaluate(eval_episodes)
     best_exp.print_summary()
     best_exp.plot_all()
     display(df)
