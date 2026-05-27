@@ -25,6 +25,7 @@ class Evaluator:
         result: TrainingResult,
         window: int = 100,
         ax: matplotlib.axes.Axes | None = None,
+        use_sarsa: bool = False
     ) -> matplotlib.axes.Axes:
         rewards = [s.total_reward for s in result.episode_stats]
         smoothed = self._rolling_mean(rewards, window)
@@ -41,7 +42,7 @@ class Evaluator:
         )
         ax.set_xlabel("Episode")
         ax.set_ylabel("Total reward")
-        ax.set_title("Learning curve — Q-Learning")
+        ax.set_title(f"Learning curve — {"SARSA" if use_sarsa else "Q-Learning"}")
         ax.legend()
         return ax
 
@@ -50,6 +51,7 @@ class Evaluator:
         ql_stats: list[EpisodeStats],
         random_stats: list[EpisodeStats],
         ax: matplotlib.axes.Axes | None = None,
+        use_sarsa: bool = False
     ) -> matplotlib.axes.Axes:
         ql_rewards = [s.total_reward for s in ql_stats]
         random_rewards = [s.total_reward for s in random_stats]
@@ -59,12 +61,12 @@ class Evaluator:
 
         ax.boxplot(
             [ql_rewards, random_rewards],
-            labels=["Q-Learning", "Random"],
+            labels=[f"{"SARSA" if use_sarsa else "Q-Learning"}", "Random"],
             patch_artist=True,
             boxprops=dict(facecolor="steelblue", alpha=0.6),
         )
         ax.set_ylabel("Total reward")
-        ax.set_title("Q-Learning vs random agent")
+        ax.set_title(f"{"SARSA" if use_sarsa else "Q-Learning"} vs random agent")
         return ax
 
     def plot_stability(

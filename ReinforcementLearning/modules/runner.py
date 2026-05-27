@@ -17,15 +17,24 @@ class ExperimentRunner:
         terminated = False
         truncated = False
 
+        action = self.agent.select_action(state, explore=training)
+
         step = 0
         for step in range(self.agent.config.max_steps):
-            action = self.agent.select_action(state, explore=training)
             next_state, reward, terminated, truncated, _ = self.env.step(action)
             reward = float(reward)
             total_reward += reward
 
             if training:
-                self.agent.update(state, action, reward, next_state, terminated, truncated)
+                if self.agent.use_sarsa:
+                    next_action = self.agent.select_action(next_state, explore=True)
+                    self.agent.update(state, action, reward, next_state, terminated, truncated, next_action)
+                    action = next_action
+                else:
+                    self.agent.update(state, action, reward, next_state, terminated, truncated)
+                    action = self.agent.select_action(next_state, explore=True)
+            else:
+                action = self.agent.select_action(next_state, explore=False)
 
             state = next_state
             if terminated or truncated:
@@ -36,7 +45,7 @@ class ExperimentRunner:
 
         return EpisodeStats(
             total_reward=total_reward,
-            steps=step+1,
+            steps=step + 1,
             terminated=terminated,
             truncated=truncated,
         )

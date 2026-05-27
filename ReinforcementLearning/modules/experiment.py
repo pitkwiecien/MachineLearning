@@ -10,6 +10,7 @@ from modules.runner import ExperimentRunner
 from modules.evaluator import Evaluator
 from modules.results import TrainingResult, BenchmarkResult, EpisodeStats
 from modules._typing import Environment
+from IPython.display import display
 
 
 class Experiment:
@@ -19,11 +20,13 @@ class Experiment:
         config: TrainingConfig | None = None,
         n_runs: int = 10,
         seed: int = 1234,
+        use_sarsa: bool = False,
     ) -> None:
         self.env_id = env_id
         self.config = config or TrainingConfig()
         self.n_runs = n_runs
         self.seed = seed
+        self.use_sarsa = use_sarsa
         self.evaluator = Evaluator()
         self.benchmark: BenchmarkResult | None = None
         self.random_stats: list[EpisodeStats] | None = None
@@ -38,6 +41,7 @@ class Experiment:
             n_actions=int(env.action_space.n),
             config=self.config,
             rng=rng,
+            use_sarsa=self.use_sarsa,
         )
 
     def run(self, eval_episodes: int = 500) -> None:
@@ -74,19 +78,23 @@ class Experiment:
 
     def print_summary(self) -> None:
         assert self.benchmark and self.eval_stats and self.random_stats
+        algo = "SARSA" if self.use_sarsa else "Q-Learning"
         b = self.benchmark
+        print(f"Algorithm: {algo}")
         print(f"Stability ({b.n_runs} runs):  mean={b.mean_reward:.2f}  std={b.std_reward:.2f}  min={b.min_reward:.2f}  max={b.max_reward:.2f}")
         ql_mean = float(np.mean([s.total_reward for s in self.eval_stats]))
         rnd_mean = float(np.mean([s.total_reward for s in self.random_stats]))
-        print(f"Q-Learning eval:  {ql_mean:.2f}")
+        print(f"{algo} eval:     {ql_mean:.2f}")
         print(f"Random agent:     {rnd_mean:.2f}")
 
     def plot_all(self) -> None:
         assert self.benchmark and self.eval_stats and self.random_stats
         import matplotlib.pyplot as plt
+        algo = "SARSA" if self.use_sarsa else "Q-Learning"
         fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-        self.evaluator.plot_learning_curve(self.benchmark.runs[0], ax=axes[0])
-        self.evaluator.plot_comparison(self.eval_stats, self.random_stats, ax=axes[1])
+        fig.suptitle(algo)
+        self.evaluator.plot_learning_curve(self.benchmark.runs[0], ax=axes[0], use_sarsa=self.use_sarsa)
+        self.evaluator.plot_comparison(self.eval_stats, self.random_stats, ax=axes[1], use_sarsa=self.use_sarsa)
         self.evaluator.plot_stability(self.benchmark, ax=axes[2])
         plt.tight_layout()
         plt.show()
@@ -110,11 +118,18 @@ def grid_search(
     eval_episodes: int = 500,
     seed: int = 1234,
     save_path: str | None = None,
+    use_sarsa: bool = False,
 ) -> pd.DataFrame:
     keys = list(param_grid.keys())
     combinations = list(product(*param_grid.values()))
 
     records = []
+    best_eval = -np.inf
+    best_qtable = None
+    best_config = None
+    best_result = None
+    best_eval_stats = None  # ← zachowaj eval_stats najlepszej kombinacji
+
     for combo in tqdm(combinations, desc="Grid search"):
         params = dict(zip(keys, combo))
         config = TrainingConfig(**params, n_episodes=n_episodes)
@@ -126,6 +141,7 @@ def grid_search(
             n_actions=int(env.action_space.n),
             config=config,
             rng=rng,
+            use_sarsa=use_sarsa,
         )
         runner = ExperimentRunner(env, agent)
         result = runner.train()
@@ -134,24 +150,46 @@ def grid_search(
         env.close()
 
         eval_rewards = [s.total_reward for s in eval_stats]
+        eval_mean = float(np.mean(eval_rewards))
+
         records.append({
             **params,
-            "eval_mean": round(float(np.mean(eval_rewards)), 2),
+            "eval_mean": round(eval_mean, 2),
             "eval_std": round(float(np.std(eval_rewards)), 2),
             "eval_min": round(float(np.min(eval_rewards)), 2),
             "eval_max": round(float(np.max(eval_rewards)), 2),
             "train_mean": round(result.mean_reward, 2),
         })
 
+        if eval_mean > best_eval:
+            best_eval = eval_mean
+            best_qtable = agent.q_table.copy()
+            best_config = config
+            best_result = result
+            best_eval_stats = eval_stats  # ← zachowaj
+
     df = pd.DataFrame(records).sort_values("eval_mean", ascending=False).reset_index(drop=True)
 
     if save_path is not None:
         df.to_csv(save_path, index=False)
 
-    best_params = {k: records[0][k] for k in keys}
-    best_config = TrainingConfig(**best_params, n_episodes=n_episodes)
-    best_exp = Experiment(env_id, config=best_config, n_runs=1, seed=seed)
-    best_exp.run(eval_episodes=eval_episodes)
+    best_exp = Experiment(env_id, config=best_config, n_runs=1, seed=seed, use_sarsa=use_sarsa)
+    env = gym.make(env_id)
+    best_agent = QLearningAgent(
+        n_states=int(env.observation_space.n),
+        n_actions=int(env.action_space.n),
+        config=best_config,
+        use_sarsa=use_sarsa,
+    )
+    best_agent.q_table = best_qtable
+    env.close()
+
+    best_exp._best_agent = best_agent
+    best_exp.benchmark = best_exp.evaluator.stability_analysis([best_result])
+    best_exp.eval_stats = best_eval_stats  # ← użyj zachowanych, nie losuj ponownie
+    _, best_exp.random_stats = best_exp._evaluate(eval_episodes)  # random potrzebuje środowiska
+    best_exp.print_summary()
     best_exp.plot_all()
+    display(df)
 
     return df

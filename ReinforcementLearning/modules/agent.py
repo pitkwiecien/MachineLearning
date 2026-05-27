@@ -9,7 +9,8 @@ class QLearningAgent:
         n_states: int,
         n_actions: int,
         config: TrainingConfig,
-        rng: np.random.Generator | None = None
+        rng: np.random.Generator | None = None,
+        use_sarsa: bool = False,
     ) -> None:
         self.n_states = n_states
         self.n_actions = n_actions
@@ -17,6 +18,7 @@ class QLearningAgent:
         self.epsilon = config.epsilon_start
         self._rng = rng or np.random.default_rng()
         self.q_table: np.ndarray = np.zeros((n_states, n_actions))
+        self.use_sarsa = use_sarsa
 
     def select_action(self, state: int, *, explore: bool = True) -> int:
         if explore and self._rng.random() < self.epsilon:
@@ -31,9 +33,13 @@ class QLearningAgent:
         next_state: int,
         terminated: bool,
         truncated: bool,
+        next_action: int | None = None
     ) -> None:
         if terminated:
             target = reward
+        elif self.use_sarsa:
+            assert next_action is not None
+            target = reward + self.config.gamma * float(self.q_table[next_state, next_action])
         else:
             target = reward + self.config.gamma * float(np.max(self.q_table[next_state]))
 
