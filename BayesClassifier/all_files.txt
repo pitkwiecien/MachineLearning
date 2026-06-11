@@ -1,0 +1,519 @@
+File: ./src/classifier_result.py
+import numpy.typing as npt
+import numpy as np
+from typing import Self
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+
+class ClassifierResult:
+    def __init__(self, accuracy: float, precision: float, recall: float, f1: float):
+        self.accuracy = accuracy
+        self.precision = precision
+        self.recall = recall
+        self.f1 = f1
+
+    @classmethod
+    def from_predictions(cls, y_true: npt.NDArray[np.int64], y_pred: npt.NDArray[np.int64]) -> Self:
+        accuracy = float(accuracy_score(y_true, y_pred))
+        precision = float(precision_score(y_true, y_pred, pos_label=1, zero_division=0))
+        recall = float(recall_score(y_true, y_pred, pos_label=1, zero_division=0))
+        f1 = float(f1_score(y_true, y_pred, pos_label=1, zero_division=0))
+
+        return cls(accuracy, precision, recall, f1)
+
+
+File: ./src/dataset_loader.py
+import numpy as np
+from sklearn.model_selection import train_test_split
+from ucimlrepo import fetch_ucirepo
+from src.typing import FeatureMatrix, LabelVector
+
+
+class DatasetLoader:
+    def __init__(
+        self,
+        ucirepo_id: int,
+        test_ratio: float = 0.2,
+        random_seed: int = 42,
+    ) -> None:
+        self.ucirepo_id: int = ucirepo_id
+        self.test_ratio: float = test_ratio
+        self.random_seed: int = random_seed
+
+    def load_data(self) -> tuple[FeatureMatrix, LabelVector]:
+        spambase = fetch_ucirepo(id=self.ucirepo_id)
+        features: FeatureMatrix = np.asarray(spambase.data.features, dtype=np.float64)
+        targets: LabelVector = np.asarray(spambase.data.targets).ravel().astype(np.int64)
+
+        return features, targets
+
+    def train_test_split(
+        self,
+        features: FeatureMatrix,
+        labels: LabelVector,
+    ) -> tuple[FeatureMatrix, FeatureMatrix, LabelVector, LabelVector]:
+        X_train, X_test, y_train, y_test = train_test_split(
+            features,
+            labels,
+            test_size=self.test_ratio,
+            random_state=self.random_seed,
+            stratify=labels,
+        )
+
+        return (
+            X_train,
+            X_test,
+            y_train,
+            y_test,
+        )
+
+File: ./src/experiments.py
+from src.dataset_loader import DatasetLoader
+from src.validation import Validator
+from src.classifier_result import ClassifierResult
+from src.naive_bayes_classifier import NaiveBayes
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score
+
+
+class ExperimentRunner:
+
+    def run(
+        self,
+        ucirepo_id: int = 94,
+        variance_smoothing: float = 1e-9,
+    ) -> None:
+
+        loader = DatasetLoader(
+            ucirepo_id=ucirepo_id
+        )
+
+        features, labels = loader.load_data()
+
+        validator = Validator(
+            n_splits=5,
+            n_repeats=20,
+            variance_smoothing=variance_smoothing
+        )
+
+        repeated_results = validator.repeated_experiment(
+            features,
+            labels,
+            ucirepo_id=ucirepo_id
+        )
+
+        cv_results = validator.k_fold_cross_validation(
+            features,
+            labels
+        )
+
+        print("\nREPEATED EXPERIMENT")
+        self._print_summary(repeated_results)
+
+        print("\nK-FOLD CV")
+        self._print_summary(cv_results)
+
+        X_train, X_test, y_train, y_test = (
+            loader.train_test_split(
+                features,
+                labels
+            )
+        )
+
+        model = NaiveBayes(
+            variance_smoothing=variance_smoothing
+        )
+
+        model.fit(
+            X_train,
+            y_train
+        )
+
+        y_pred = model.predict(X_test)
+
+        final_result = ClassifierResult.from_predictions(
+            y_test,
+            y_pred
+        )
+
+        print("\nFINAL MODEL (TEST SET)")
+        print(final_result.__dict__)
+
+    def grid_search_variance_smoothing(
+        self,
+        ucirepo_id: int = 94,
+    ) -> pd.DataFrame:
+
+        loader = DatasetLoader(
+            ucirepo_id=ucirepo_id
+        )
+
+        features, labels = loader.load_data()
+
+        smoothing_values = [
+            1e-12,
+            1e-10,
+            1e-8,
+            1e-6,
+            1e-4,
+            1e-2
+        ]
+
+        rows = []
+
+        for smooth in smoothing_values:
+
+            validator = Validator(
+                n_splits=5,
+                n_repeats=20,
+                variance_smoothing=smooth
+            )
+
+            results = validator.k_fold_cross_validation(
+                features,
+                labels
+            )
+
+            rows.append({
+                "variance_smoothing": smooth,
+                "accuracy": np.mean(
+                    [r.accuracy for r in results]
+                ),
+                "precision": np.mean(
+                    [r.precision for r in results]
+                ),
+                "f1": np.mean(
+                    [r.f1 for r in results]
+                ),
+                "recall": np.mean(
+                    [r.recall for r in results]
+                )
+            })
+
+        return pd.DataFrame(rows)
+
+    def plot_grid_search(
+        self,
+        grid_df: pd.DataFrame,
+    ) -> None:
+
+        plt.figure(figsize=(8, 5))
+
+        plt.plot(
+            grid_df["variance_smoothing"],
+            grid_df["accuracy"],
+            marker="o",
+            label="Accuracy"
+        )
+
+        plt.plot(
+            grid_df["variance_smoothing"],
+            grid_df["precision"],
+            marker="s",
+            label="precision"
+        )
+
+        plt.plot(
+            grid_df["variance_smoothing"],
+            grid_df["f1"],
+            marker="s",
+            label="F1"
+        )
+
+        plt.plot(
+            grid_df["variance_smoothing"],
+            grid_df["recall"],
+            marker="s",
+            label="recall"
+        )
+
+        plt.xscale("log")
+
+        plt.xlabel("variance_smoothing")
+        plt.ylabel("score")
+
+        plt.title("Grid Search")
+
+        plt.legend()
+        plt.grid()
+
+        plt.show()
+
+    def repeated_metrics_dataframe(
+        self,
+        ucirepo_id: int = 94,
+    ) -> pd.DataFrame:
+        loader = DatasetLoader(ucirepo_id=ucirepo_id)
+        features, labels = loader.load_data()
+        validator = Validator(
+            n_splits=5,
+            n_repeats=20
+        )
+
+        results = validator.repeated_experiment(
+            features,
+            labels,
+            ucirepo_id=ucirepo_id
+        )
+
+        return pd.DataFrame({
+            "accuracy": [r.accuracy for r in results],
+            "precision": [r.precision for r in results],
+            "recall": [r.recall for r in results],
+            "f1": [r.f1 for r in results],
+        })
+
+    def plot_accuracy_histogram(
+        self,
+        metrics_df: pd.DataFrame,
+    ) -> None:
+        plt.figure(figsize=(8, 5))
+        plt.hist(metrics_df["accuracy"], bins=10)
+        plt.title("Accuracy Distribution")
+        plt.xlabel("Accuracy")
+        plt.ylabel("Count")
+        plt.show()
+
+    def plot_metrics_boxplot(
+        self,
+        metrics_df: pd.DataFrame,
+    ) -> None:
+        plt.figure(figsize=(8, 5))
+        metrics_df.boxplot()
+        plt.title("Metric Distribution")
+        plt.show()
+
+    def compare_with_sklearn(self, ucirepo_id: int = 94) -> pd.DataFrame:
+        loader = DatasetLoader(
+            ucirepo_id=ucirepo_id
+        )
+
+        features, labels = loader.load_data()
+        X_train, X_test, y_train, y_test = (
+            loader.train_test_split(
+                features,
+                labels
+            )
+        )
+
+        custom_model = NaiveBayes()
+        custom_model.fit(
+            X_train,
+            y_train
+        )
+        custom_pred = custom_model.predict(
+            X_test
+        )
+
+        sklearn_model = GaussianNB()
+        sklearn_model.fit(
+            X_train,
+            y_train
+        )
+
+        sklearn_pred = sklearn_model.predict(X_test)
+
+        return pd.DataFrame({
+            "model": [
+                "Custom NB",
+                "Sklearn NB"
+            ],
+            "accuracy": [
+                accuracy_score(y_test, custom_pred),
+                accuracy_score(y_test, sklearn_pred)
+            ],
+            "precision": [
+                precision_score(y_test, custom_pred),
+                precision_score(y_test, sklearn_pred)
+            ],
+            "f1": [
+                f1_score(y_test, custom_pred),
+                f1_score(y_test, sklearn_pred)
+            ],
+            "recall": [
+                recall_score(y_test, custom_pred),
+                recall_score(y_test, sklearn_pred)
+            ]
+        })
+
+    def plot_model_comparison(
+        self,
+        comparison_df: pd.DataFrame,
+    ) -> None:
+        comparison_df.plot(
+            x="model",
+            y=["accuracy", "precision", "f1", "recall"],
+            kind="bar",
+            figsize=(8, 5)
+        )
+        plt.title("Custom vs Sklearn")
+        plt.ylabel("Score")
+        plt.show()
+
+    def _print_summary(
+        self,
+        results: list[ClassifierResult]
+    ) -> None:
+        def stats(values):
+            arr = np.array(values)
+
+            return {
+                "mean": float(np.mean(arr)),
+                "std": float(np.std(arr)),
+                "min": float(np.min(arr)),
+                "max": float(np.max(arr)),
+            }
+
+        print("accuracy:", stats([r.accuracy for r in results]))
+        print("precision:", stats([r.precision for r in results]))
+        print("recall:", stats([r.recall for r in results]))
+        print("f1:", stats([r.f1 for r in results]))
+
+File: ./src/typing.py
+import numpy.typing as npt
+import numpy as np
+
+
+FeatureMatrix = npt.NDArray[np.float64]
+FeatureVector = npt.NDArray[np.float64]
+LabelVector = npt.NDArray[np.int64]
+
+
+File: ./src/naive_bayes_classifier.py
+from src.typing import FeatureMatrix, FeatureVector, LabelVector
+import numpy as np
+
+
+class NaiveBayes:
+    def __init__(self, variance_smoothing: float = 1e-9):
+        self.variance_smoothing = variance_smoothing
+        self.classes: LabelVector | None = None
+        self.class_priors: dict[int, float] = {}
+        self.feature_means: dict[int, FeatureVector] = {}
+        self.feature_variances: dict[int, FeatureVector] = {}
+
+    def fit(
+        self,
+        features: FeatureMatrix,
+        labels: LabelVector,
+    ) -> None:
+        self.classes = np.unique(labels)
+
+        for current_class in self.classes:
+            class_samples: FeatureMatrix = features[labels == current_class]
+
+            self.class_priors[int(current_class)] = (len(class_samples) / len(features))
+            self.feature_means[int(current_class)] = np.mean(class_samples, axis=0)
+            self.feature_variances[int(current_class)] = (np.var(class_samples, axis=0) + self.variance_smoothing)
+
+    def predict(
+        self,
+        features: FeatureMatrix,
+    ) -> LabelVector:
+        predictions: list[int] = [self._predict_single(sample) for sample in features]
+        return np.asarray(predictions, dtype=np.int64)
+
+    def _predict_single(
+        self,
+        sample: FeatureVector,
+    ) -> int:
+        if self.classes is None:
+            raise RuntimeError("The classifier must be trained before making predictions")
+
+        class_scores: list[float] = []
+        for current_class in self.classes:
+            class_label: int = int(current_class)
+            log_prior: float = np.log(self.class_priors[class_label])
+
+            log_likelihood = log_likelihood = np.sum(
+                - 0.5 * np.log(2 * np.pi * self.feature_variances[class_label])
+                - ((sample - self.feature_means[class_label]) ** 2)
+                / (2 * self.feature_variances[class_label]))
+            posterior_probability = log_prior + log_likelihood
+            class_scores.append(posterior_probability)
+
+        predicted_index: int = int(np.argmax(class_scores))
+        return int(self.classes[predicted_index])
+
+
+File: ./src/validation.py
+from sklearn.model_selection import StratifiedKFold
+
+from src.naive_bayes_classifier import NaiveBayes
+from src.classifier_result import ClassifierResult
+from src.typing import FeatureMatrix, LabelVector
+from src.dataset_loader import DatasetLoader
+
+
+class Validator:
+    def __init__(
+        self,
+        n_splits: int = 5,
+        n_repeats: int = 20,
+        random_seed: int = 42,
+        variance_smoothing: float = 1e-9
+        ) -> None:
+        self.variance_smoothing = variance_smoothing
+        self.n_splits = n_splits
+        self.n_repeats = n_repeats
+        self.random_seed = random_seed
+
+    def repeated_experiment(
+        self,
+        features: FeatureMatrix,
+        labels: LabelVector,
+        ucirepo_id: int,
+        test_ratio: float = 0.2,
+    ) -> list[ClassifierResult]:
+
+        loader = DatasetLoader(
+            ucirepo_id=ucirepo_id,
+            test_ratio=test_ratio,
+            random_seed=self.random_seed,
+        )
+
+        results: list[ClassifierResult] = []
+
+        for i in range(self.n_repeats):
+            seed = self.random_seed + i
+            loader.random_seed = seed
+            X_train, X_test, y_train, y_test = loader.train_test_split(features, labels)
+            model = NaiveBayes(variance_smoothing=self.variance_smoothing)
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+            results.append(ClassifierResult.from_predictions(y_test, y_pred))
+
+        return results
+
+    def k_fold_cross_validation(
+        self,
+        features: FeatureMatrix,
+        labels: LabelVector,
+    ) -> list[ClassifierResult]:
+
+        kf = StratifiedKFold(
+            n_splits=self.n_splits,
+            shuffle=True,
+            random_state=self.random_seed,
+        )
+
+        results: list[ClassifierResult] = []
+        for train_index, test_index in kf.split(features, labels):
+
+            X_train, X_test = features[train_index], features[test_index]
+            y_train, y_test = labels[train_index], labels[test_index]
+
+            model = NaiveBayes(variance_smoothing=self.variance_smoothing)
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+
+            results.append(ClassifierResult.from_predictions(y_test, y_pred))
+
+        return results
+
+
