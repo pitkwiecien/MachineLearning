@@ -3,7 +3,8 @@ import numpy as np
 
 
 class NaiveBayes:
-    def __init__(self) -> None:
+    def __init__(self, variance_smoothing: float = 1e-9):
+        self.variance_smoothing = variance_smoothing
         self.classes: LabelVector | None = None
         self.class_priors: dict[int, float] = {}
         self.feature_means: dict[int, FeatureVector] = {}
@@ -21,7 +22,7 @@ class NaiveBayes:
 
             self.class_priors[int(current_class)] = (len(class_samples) / len(features))
             self.feature_means[int(current_class)] = np.mean(class_samples, axis=0)
-            self.feature_variances[int(current_class)] = np.var(class_samples, axis=0) + 1e-9
+            self.feature_variances[int(current_class)] = (np.var(class_samples, axis=0) + self.variance_smoothing)
 
     def predict(
         self,

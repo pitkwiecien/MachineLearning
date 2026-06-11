@@ -1,3 +1,73 @@
+File: ./src/classifier_result.py
+import numpy.typing as npt
+import numpy as np
+from typing import Self
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+
+class ClassifierResult:
+    def __init__(self, accuracy: float, precision: float, recall: float, f1: float):
+        self.accuracy = accuracy
+        self.precision = precision
+        self.recall = recall
+        self.f1 = f1
+
+    @classmethod
+    def from_predictions(cls, y_true: npt.NDArray[np.int64], y_pred: npt.NDArray[np.int64]) -> Self:
+        accuracy = float(accuracy_score(y_true, y_pred))
+        precision = float(precision_score(y_true, y_pred, pos_label=1, zero_division=0))
+        recall = float(recall_score(y_true, y_pred, pos_label=1, zero_division=0))
+        f1 = float(f1_score(y_true, y_pred, pos_label=1, zero_division=0))
+
+        return cls(accuracy, precision, recall, f1)
+
+
+File: ./src/dataset_loader.py
+import numpy as np
+from sklearn.model_selection import train_test_split
+from ucimlrepo import fetch_ucirepo
+from src.typing import FeatureMatrix, LabelVector
+
+
+class DatasetLoader:
+    def __init__(
+        self,
+        ucirepo_id: int,
+        test_ratio: float = 0.2,
+        random_seed: int = 42,
+    ) -> None:
+        self.ucirepo_id: int = ucirepo_id
+        self.test_ratio: float = test_ratio
+        self.random_seed: int = random_seed
+
+    def load_data(self) -> tuple[FeatureMatrix, LabelVector]:
+        spambase = fetch_ucirepo(id=self.ucirepo_id)
+        features: FeatureMatrix = np.asarray(spambase.data.features, dtype=np.float64)
+        targets: LabelVector = np.asarray(spambase.data.targets).ravel().astype(np.int64)
+
+        return features, targets
+
+    def train_test_split(
+        self,
+        features: FeatureMatrix,
+        labels: LabelVector,
+    ) -> tuple[FeatureMatrix, FeatureMatrix, LabelVector, LabelVector]:
+        X_train, X_test, y_train, y_test = train_test_split(
+            features,
+            labels,
+            test_size=self.test_ratio,
+            random_state=self.random_seed,
+            stratify=labels,
+        )
+
+        return (
+            X_train,
+            X_test,
+            y_train,
+            y_test,
+        )
+
+File: ./src/experiments.py
 from src.dataset_loader import DatasetLoader
 from src.validation import Validator
 from src.classifier_result import ClassifierResult
@@ -303,3 +373,147 @@ class ExperimentRunner:
         print("precision:", stats([r.precision for r in results]))
         print("recall:", stats([r.recall for r in results]))
         print("f1:", stats([r.f1 for r in results]))
+
+File: ./src/typing.py
+import numpy.typing as npt
+import numpy as np
+
+
+FeatureMatrix = npt.NDArray[np.float64]
+FeatureVector = npt.NDArray[np.float64]
+LabelVector = npt.NDArray[np.int64]
+
+
+File: ./src/naive_bayes_classifier.py
+from src.typing import FeatureMatrix, FeatureVector, LabelVector
+import numpy as np
+
+
+class NaiveBayes:
+    def __init__(self, variance_smoothing: float = 1e-9):
+        self.variance_smoothing = variance_smoothing
+        self.classes: LabelVector | None = None
+        self.class_priors: dict[int, float] = {}
+        self.feature_means: dict[int, FeatureVector] = {}
+        self.feature_variances: dict[int, FeatureVector] = {}
+
+    def fit(
+        self,
+        features: FeatureMatrix,
+        labels: LabelVector,
+    ) -> None:
+        self.classes = np.unique(labels)
+
+        for current_class in self.classes:
+            class_samples: FeatureMatrix = features[labels == current_class]
+
+            self.class_priors[int(current_class)] = (len(class_samples) / len(features))
+            self.feature_means[int(current_class)] = np.mean(class_samples, axis=0)
+            self.feature_variances[int(current_class)] = (np.var(class_samples, axis=0) + self.variance_smoothing)
+
+    def predict(
+        self,
+        features: FeatureMatrix,
+    ) -> LabelVector:
+        predictions: list[int] = [self._predict_single(sample) for sample in features]
+        return np.asarray(predictions, dtype=np.int64)
+
+    def _predict_single(
+        self,
+        sample: FeatureVector,
+    ) -> int:
+        if self.classes is None:
+            raise RuntimeError("The classifier must be trained before making predictions")
+
+        class_scores: list[float] = []
+        for current_class in self.classes:
+            class_label: int = int(current_class)
+            log_prior: float = np.log(self.class_priors[class_label])
+
+            log_likelihood = log_likelihood = np.sum(
+                - 0.5 * np.log(2 * np.pi * self.feature_variances[class_label])
+                - ((sample - self.feature_means[class_label]) ** 2)
+                / (2 * self.feature_variances[class_label]))
+            posterior_probability = log_prior + log_likelihood
+            class_scores.append(posterior_probability)
+
+        predicted_index: int = int(np.argmax(class_scores))
+        return int(self.classes[predicted_index])
+
+
+File: ./src/validation.py
+from sklearn.model_selection import StratifiedKFold
+
+from src.naive_bayes_classifier import NaiveBayes
+from src.classifier_result import ClassifierResult
+from src.typing import FeatureMatrix, LabelVector
+from src.dataset_loader import DatasetLoader
+
+
+class Validator:
+    def __init__(
+        self,
+        n_splits: int = 5,
+        n_repeats: int = 20,
+        random_seed: int = 42,
+        variance_smoothing: float = 1e-9
+        ) -> None:
+        self.variance_smoothing = variance_smoothing
+        self.n_splits = n_splits
+        self.n_repeats = n_repeats
+        self.random_seed = random_seed
+
+    def repeated_experiment(
+        self,
+        features: FeatureMatrix,
+        labels: LabelVector,
+        ucirepo_id: int,
+        test_ratio: float = 0.2,
+    ) -> list[ClassifierResult]:
+
+        loader = DatasetLoader(
+            ucirepo_id=ucirepo_id,
+            test_ratio=test_ratio,
+            random_seed=self.random_seed,
+        )
+
+        results: list[ClassifierResult] = []
+
+        for i in range(self.n_repeats):
+            seed = self.random_seed + i
+            loader.random_seed = seed
+            X_train, X_test, y_train, y_test = loader.train_test_split(features, labels)
+            model = NaiveBayes(variance_smoothing=self.variance_smoothing)
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+            results.append(ClassifierResult.from_predictions(y_test, y_pred))
+
+        return results
+
+    def k_fold_cross_validation(
+        self,
+        features: FeatureMatrix,
+        labels: LabelVector,
+    ) -> list[ClassifierResult]:
+
+        kf = StratifiedKFold(
+            n_splits=self.n_splits,
+            shuffle=True,
+            random_state=self.random_seed,
+        )
+
+        results: list[ClassifierResult] = []
+        for train_index, test_index in kf.split(features, labels):
+
+            X_train, X_test = features[train_index], features[test_index]
+            y_train, y_test = labels[train_index], labels[test_index]
+
+            model = NaiveBayes(variance_smoothing=self.variance_smoothing)
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+
+            results.append(ClassifierResult.from_predictions(y_test, y_pred))
+
+        return results
+
+

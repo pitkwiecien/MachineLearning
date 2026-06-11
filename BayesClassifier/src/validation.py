@@ -7,7 +7,14 @@ from src.dataset_loader import DatasetLoader
 
 
 class Validator:
-    def __init__(self, n_splits: int = 5, n_repeats: int = 20, random_seed: int = 42) -> None:
+    def __init__(
+        self,
+        n_splits: int = 5,
+        n_repeats: int = 20,
+        random_seed: int = 42,
+        variance_smoothing: float = 1e-9
+        ) -> None:
+        self.variance_smoothing = variance_smoothing
         self.n_splits = n_splits
         self.n_repeats = n_repeats
         self.random_seed = random_seed
@@ -32,7 +39,7 @@ class Validator:
             seed = self.random_seed + i
             loader.random_seed = seed
             X_train, X_test, y_train, y_test = loader.train_test_split(features, labels)
-            model = NaiveBayes()
+            model = NaiveBayes(variance_smoothing=self.variance_smoothing)
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
             results.append(ClassifierResult.from_predictions(y_test, y_pred))
@@ -57,7 +64,7 @@ class Validator:
             X_train, X_test = features[train_index], features[test_index]
             y_train, y_test = labels[train_index], labels[test_index]
 
-            model = NaiveBayes()
+            model = NaiveBayes(variance_smoothing=self.variance_smoothing)
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
 
