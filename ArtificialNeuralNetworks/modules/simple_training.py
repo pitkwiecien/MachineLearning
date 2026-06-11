@@ -134,10 +134,6 @@ def train_validate_test(path: str, config: TrainingConfig):
         history["train_accuracy"].append(float(train_acc))
         history["val_accuracy"].append(float(val_acc))
 
-    # =========================
-    # FINAL TEST METRICS (FIXED)
-    # =========================
-
     test_pred = model.forward(X_test)
 
     metrics: ClassificationMetrics = compute_classification_metrics(

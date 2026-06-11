@@ -100,7 +100,6 @@ class ExperimentRunner:
 
         configs = self._configs()
 
-        # Obsługa sample_size
         if sample_size is not None:
             random.seed(42)
             configs = random.sample(configs, min(sample_size, len(configs)))
@@ -123,7 +122,7 @@ class ExperimentRunner:
                     "f1": metrics.f1,
                     "precision": metrics.precision,
                     "recall": metrics.recall,
-                    "train_loss": history["train_loss"][-1], # Dodana kolumna
+                    "train_loss": history["train_loss"][-1],
                     "val_loss": history["val_loss"][-1],
                 })
 
